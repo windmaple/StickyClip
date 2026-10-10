@@ -12,6 +12,7 @@ A tiny macOS menu-bar clipboard manager. Press **⇧⌘V** and your clipboard hi
 - Records **text, links, images and Finder files**
 - **⇧⌘V** opens a floating board of sticky notes (it doesn't steal focus from your current app)
 - Search by typing, navigate with arrow keys, pick with ↩ or ⌘1–9
+- **Drag a note onto any app window** to drop it in. Apps that accept drops insert it where you let go; for windows that don't, StickyClip brings the window forward and pastes with ⌘V
 - **Pin** notes so they never get pushed out of history
 - Same content copied again just moves to the top (no duplicates)
 - Skips password-manager content (respects the `org.nspasteboard.ConcealedType` / `TransientType` markers)
@@ -54,6 +55,8 @@ note, and you press ⌘V yourself.
 | Esc | Clear the search, or close the board |
 
 Clicking a note pastes it, right-clicking opens more options, and clicking outside the board closes it.
+Drag a note out of the board and the board fades away so you can drop it onto any window. Press Esc mid-drag, or drop on
+empty desktop, to cancel.
 
 ## Project layout
 

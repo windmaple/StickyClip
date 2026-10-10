@@ -90,11 +90,13 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
     func hide() {
         removeKeyMonitor()
         panel.orderOut(nil)
+        panel.ignoresMouseEvents = false
+        panel.alphaValue = 1
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        // Clicking anywhere else dismisses the board.
-        if panel.isVisible { hide() }
+        // Clicking anywhere else dismisses the board (but not while a note is being dragged out).
+        if panel.isVisible && !isDragging { hide() }
     }
 
     private func positionOnActiveScreen() {
@@ -107,6 +109,75 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
             y: visible.midY - size.height / 2 + visible.height * 0.08
         )
         panel.setFrameOrigin(origin)
+    }
+
+    // MARK: - Drag a note out to another app
+
+    private var isDragging = false
+
+    /// Fade the board away so the windows behind it are visible and can receive the drop.
+    func dragDidBegin() {
+        isDragging = true
+        panel.ignoresMouseEvents = true
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            panel.animator().alphaValue = 0
+        }
+    }
+
+    func dragDidEnd(item: ClipItem, at screenPoint: NSPoint, accepted: Bool, cancelled: Bool) {
+        isDragging = false
+
+        if accepted {
+            // The target app inserted the content itself (text field, editor, Finder, …).
+            ClipboardStore.shared.bump(id: item.id)
+            hide()
+            return
+        }
+
+        guard !cancelled, let target = DropTargetFinder.window(at: screenPoint) else {
+            restoreAfterDrag() // Esc, or dropped on empty desktop → bring the board back
+            return
+        }
+
+        // The window doesn't accept drops: focus it and paste instead.
+        hide()
+        let store = ClipboardStore.shared
+        store.writeToPasteboard(item)
+        ClipboardMonitor.shared.ignoreCurrentChange()
+        store.bump(id: item.id)
+
+        guard PasteService.isTrusted else {
+            target.app?.activate()
+            if !didPromptThisSession {
+                didPromptThisSession = true
+                PasteService.requestAccess()
+            }
+            return
+        }
+        DropTargetFinder.focus(target)
+        pasteWhenFrontmost(pid: target.pid)
+    }
+
+    private func restoreAfterDrag() {
+        panel.ignoresMouseEvents = false
+        panel.alphaValue = 1
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    /// Waits (briefly) for the target app to actually become frontmost, then sends ⌘V.
+    /// If it never comes forward, we don't paste (the note is still on the clipboard).
+    private func pasteWhenFrontmost(pid: pid_t, attempt: Int = 0) {
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+                PasteService.simulatePaste()
+            }
+            return
+        }
+        guard attempt < 20 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.pasteWhenFrontmost(pid: pid, attempt: attempt + 1)
+        }
     }
 
     // MARK: - Choosing

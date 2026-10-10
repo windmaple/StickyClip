@@ -57,8 +57,7 @@ struct StickyNoteView: View {
     let item: ClipItem
     let index: Int
     let isSelected: Bool
-
-    @State private var isHovering = false
+    var isHovering: Bool = false
 
     private var ink: Color { Color.black.opacity(0.78) }
     private var softInk: Color { Color.black.opacity(0.5) }
@@ -107,7 +106,6 @@ struct StickyNoteView: View {
         .zIndex(isSelected ? 1 : 0)
         .animation(.spring(response: 0.25, dampingFraction: 0.72), value: isSelected)
         .animation(.easeOut(duration: 0.12), value: isHovering)
-        .onHover { isHovering = $0 }
         .help(item.menuTitle)
     }
 

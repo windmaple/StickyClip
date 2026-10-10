@@ -104,6 +104,7 @@ struct NotesBoardView: View {
     @ObservedObject var store = ClipboardStore.shared
     @FocusState private var searchFocused: Bool
     @AppStorage("autoPaste") private var autoPaste = true
+    @State private var hoveredID: UUID?
 
     var body: some View {
         let items = model.visibleItems
@@ -163,13 +164,25 @@ struct NotesBoardView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(columns: columns, spacing: BoardMetrics.spacing + 4) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        StickyNoteView(item: item, index: index, isSelected: index == model.selectedIndex)
+                        StickyNoteView(item: item, index: index,
+                                       isSelected: index == model.selectedIndex,
+                                       isHovering: hoveredID == item.id)
+                            .overlay(
+                                NoteInteractionOverlay(
+                                    item: item,
+                                    index: index,
+                                    onClick: {
+                                        model.selectedIndex = index
+                                        model.choose(at: index)
+                                    },
+                                    onHover: { hovering in
+                                        if hovering { hoveredID = item.id }
+                                        else if hoveredID == item.id { hoveredID = nil }
+                                    },
+                                    menuProvider: { contextMenu(for: item, index: index) }
+                                )
+                            )
                             .id(item.id)
-                            .onTapGesture {
-                                model.selectedIndex = index
-                                model.choose(at: index)
-                            }
-                            .contextMenu { contextMenu(for: item, index: index) }
                     }
                 }
                 .padding(.horizontal, BoardMetrics.horizontalPadding)
@@ -182,16 +195,18 @@ struct NotesBoardView: View {
                     proxy.scrollTo(items[newValue].id)
                 }
             }
+            .onChange(of: model.sessionID) { _, _ in hoveredID = nil }
         }
     }
 
-    @ViewBuilder
-    private func contextMenu(for item: ClipItem, index: Int) -> some View {
-        Button("Paste") { model.choose(at: index, paste: true) }
-        Button("Copy to Clipboard") { model.choose(at: index, paste: false) }
-        Divider()
-        Button(item.isPinned ? "Unpin" : "Pin") { model.togglePin(item) }
-        Button("Delete", role: .destructive) { model.delete(item) }
+    private func contextMenu(for item: ClipItem, index: Int) -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem("Paste") { model.choose(at: index, paste: true) })
+        menu.addItem(ClosureMenuItem("Copy to Clipboard") { model.choose(at: index, paste: false) })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(item.isPinned ? "Unpin" : "Pin") { model.togglePin(item) })
+        menu.addItem(ClosureMenuItem("Delete") { model.delete(item) })
+        return menu
     }
 
     // MARK: - Empty / footer
@@ -228,7 +243,7 @@ struct NotesBoardView: View {
                 hint("⇧↩", "Copy only")
             }
             Spacer()
-            hint("←↑↓→", "Move")
+            hint("Drag", "Drop into any app")
             hint("⌘1–9", "Quick pick")
             hint("⌘P", "Pin")
             hint("⌘⌫", "Delete")
