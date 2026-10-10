@@ -92,10 +92,26 @@ struct VisualEffectBackground: NSViewRepresentable {
 enum BoardMetrics {
     static let spacing: CGFloat = 20
     static let horizontalPadding: CGFloat = 26
+    /// Thickness of the wooden / aluminium frame around the board surface.
+    static let frame: CGFloat = 14
+    static let ledgeHeight: CGFloat = 40
+    static let headerHeight: CGFloat = 50
     static let width: CGFloat =
-        NoteMetrics.width * 4 + spacing * 3 + horizontalPadding * 2
-    static let height: CGFloat = 470
-    static let cornerRadius: CGFloat = 18
+        NoteMetrics.width * 4 + spacing * 3 + horizontalPadding * 2 + frame * 2
+    static let height: CGFloat = 500
+    static let cornerRadius: CGFloat = 14
+}
+
+/// A wobbly marker/chalk underline drawn under the search field.
+struct HandDrawnUnderline: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.midY + 1))
+        p.addCurve(to: CGPoint(x: r.maxX, y: r.midY - 1),
+                   control1: CGPoint(x: r.width * 0.3, y: r.minY),
+                   control2: CGPoint(x: r.width * 0.7, y: r.maxY))
+        return p
+    }
 }
 
 /// The board of sticky notes shown when ⇧⌘V is pressed.
@@ -104,31 +120,86 @@ struct NotesBoardView: View {
     @ObservedObject var store = ClipboardStore.shared
     @FocusState private var searchFocused: Bool
     @AppStorage("autoPaste") private var autoPaste = true
+    @AppStorage(BoardTheme.defaultsKey) private var themeRaw = BoardTheme.whiteboard.rawValue
     @State private var hoveredID: UUID?
+
+    private var theme: BoardTheme { BoardTheme(rawValue: themeRaw) ?? .whiteboard }
 
     var body: some View {
         let items = model.visibleItems
 
-        VStack(spacing: 0) {
-            header(count: items.count)
-            Divider().opacity(0.4)
-            if items.isEmpty {
-                emptyState
+        Group {
+            if theme == .glass {
+                glassLayout(items)
             } else {
-                grid(items)
+                boardLayout(items)
             }
-            Divider().opacity(0.4)
-            footer
         }
         .frame(width: BoardMetrics.width, height: BoardMetrics.height)
-        .background(VisualEffectBackground())
+        .environment(\.noteAttachment, theme.attachment)
+        .onAppear { searchFocused = true }
+        .onChange(of: model.sessionID) { _, _ in searchFocused = true }
+    }
+
+    // MARK: - Layouts
+
+    /// Framed board: surface (whiteboard / cork / chalk) inside a frame, with a tray along the bottom.
+    private func boardLayout(_ items: [ClipItem]) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                header(count: items.count)
+                content(items)
+            }
+            .background(BoardSurface(theme: theme).equatable())
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay( // recessed edge where the surface meets the frame
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color.black.opacity(0.35), lineWidth: 2)
+                    .blur(radius: 1.5)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            )
+            .environment(\.colorScheme, theme.surfaceScheme ?? .light)
+            .padding(.horizontal, BoardMetrics.frame)
+            .padding(.top, BoardMetrics.frame)
+
+            footer
+                .frame(height: BoardMetrics.ledgeHeight)
+                .background(LedgeView(theme: theme))
+                .environment(\.colorScheme, theme.ledgeScheme)
+        }
+        .background(BoardFrame(theme: theme).equatable())
         .clipShape(RoundedRectangle(cornerRadius: BoardMetrics.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: BoardMetrics.cornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    /// The original frosted-glass panel.
+    private func glassLayout(_ items: [ClipItem]) -> some View {
+        VStack(spacing: 0) {
+            header(count: items.count)
+            Divider().opacity(0.4)
+            content(items)
+            Divider().opacity(0.4)
+            footer
+                .frame(height: 34)
+        }
+        .background(VisualEffectBackground())
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
         )
-        .onAppear { searchFocused = true }
-        .onChange(of: model.sessionID) { _, _ in searchFocused = true }
+    }
+
+    @ViewBuilder
+    private func content(_ items: [ClipItem]) -> some View {
+        if items.isEmpty {
+            emptyState
+        } else {
+            grid(items)
+        }
     }
 
     // MARK: - Header
@@ -136,20 +207,44 @@ struct NotesBoardView: View {
     private func header(count: Int) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search clipboard…", text: $model.query)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(theme.ink.opacity(0.65))
+            TextField("", text: $model.query,
+                      prompt: Text("Search clipboard…").foregroundStyle(theme.ink.opacity(0.45)))
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(theme.font(theme == .glass ? 15 : 18))
+                .foregroundStyle(theme.ink)
                 .focused($searchFocused)
+                .frame(maxWidth: 340)
+                .overlay(alignment: .bottom) {
+                    if theme != .glass {
+                        HandDrawnUnderline()
+                            .stroke(theme.ink.opacity(0.35), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .frame(height: 5)
+                            .offset(y: 7)
+                    }
+                }
             Spacer()
             Text("\(count) note\(count == 1 ? "" : "s")")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-            Image(systemName: "note.text")
-                .foregroundStyle(.secondary)
+                .font(theme == .glass ? .system(size: 11, weight: .medium) : theme.font(14))
+                .foregroundStyle(theme.ink.opacity(0.65))
+            if theme == .glass {
+                Image(systemName: "note.text").foregroundStyle(.secondary)
+            }
         }
-        .padding(.horizontal, 18)
-        .frame(height: 48)
+        .padding(.horizontal, theme == .cork ? 14 : 18)
+        .padding(.vertical, theme == .cork ? 6 : 0)
+        .background {
+            if theme == .cork { // a paper label pinned to the cork
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color(red: 0.99, green: 0.97, blue: 0.90))
+                    .shadow(color: .black.opacity(0.3), radius: 2, y: 2)
+                    .rotationEffect(.degrees(-0.4))
+            }
+        }
+        .padding(.horizontal, theme == .cork ? 16 : 0)
+        .padding(.top, theme == .cork ? 8 : 0)
+        .frame(height: BoardMetrics.headerHeight)
     }
 
     // MARK: - Grid
@@ -167,6 +262,7 @@ struct NotesBoardView: View {
                         StickyNoteView(item: item, index: index,
                                        isSelected: index == model.selectedIndex,
                                        isHovering: hoveredID == item.id)
+                            .environment(\.colorScheme, .light) // notes are always paper
                             .overlay(
                                 NoteInteractionOverlay(
                                     item: item,
@@ -186,7 +282,8 @@ struct NotesBoardView: View {
                     }
                 }
                 .padding(.horizontal, BoardMetrics.horizontalPadding)
-                .padding(.vertical, 22)
+                .padding(.top, 14)
+                .padding(.bottom, 22)
             }
             .id(model.sessionID) // fresh scroll position every time the board opens
             .onChange(of: model.selectedIndex) { _, newValue in
@@ -215,43 +312,51 @@ struct NotesBoardView: View {
         VStack(spacing: 10) {
             Image(systemName: model.query.isEmpty ? "note.text" : "magnifyingglass")
                 .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.ink.opacity(0.5))
             Text(model.query.isEmpty ? "Nothing copied yet" : "No notes match “\(model.query)”")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(theme == .glass ? .system(size: 14, weight: .medium) : theme.font(20))
+                .foregroundStyle(theme.ink.opacity(0.7))
             if model.query.isEmpty {
                 Text("Copy something with ⌘C and it will show up here as a sticky note.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
+                    .font(theme == .glass ? .system(size: 12) : theme.font(14))
+                    .foregroundStyle(theme.ink.opacity(0.5))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var footer: some View {
-        HStack(spacing: 14) {
-            if autoPaste && !PasteService.isTrusted {
+        let needsAccess = autoPaste && !PasteService.isTrusted
+
+        return HStack(spacing: 14) {
+            if needsAccess {
                 Button {
                     model.onOpenAccessibility?()
                 } label: {
-                    Label("Copy-only — grant Accessibility to auto-paste", systemImage: "exclamationmark.triangle.fill")
+                    Label("Grant Accessibility to auto-paste", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
                 .buttonStyle(.plain)
-            } else {
+            } else if theme == .glass {
                 hint("↩", autoPaste ? "Paste" : "Copy")
                 hint("⇧↩", "Copy only")
+            } else {
+                LedgeDecor(theme: theme)
             }
             Spacer()
+            if theme != .glass && !needsAccess {
+                hint("↩", autoPaste ? "Paste" : "Copy")
+            }
             hint("Drag", "Drop into any app")
-            hint("⌘1–9", "Quick pick")
-            hint("⌘P", "Pin")
-            hint("⌘⌫", "Delete")
+            if !needsAccess {
+                hint("⌘1–9", "Quick pick")
+                hint("⌘P", "Pin")
+                hint("⌘⌫", "Delete")
+            }
             hint("esc", "Close")
         }
         .font(.system(size: 11))
         .padding(.horizontal, 18)
-        .frame(height: 34)
     }
 
     private func hint(_ key: String, _ label: String) -> some View {
@@ -260,7 +365,7 @@ struct NotesBoardView: View {
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
-                .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.1)))
+                .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.12)))
             Text(label)
                 .foregroundStyle(.secondary)
         }

@@ -111,6 +111,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pause.state = ClipboardMonitor.shared.isPaused ? .on : .off
         menu.addItem(pause)
 
+        let styleItem = NSMenuItem(title: "Board Style", action: nil, keyEquivalent: "")
+        let styleMenu = NSMenu()
+        for theme in BoardTheme.allCases {
+            let mi = NSMenuItem(title: theme.title, action: #selector(setBoardTheme(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.representedObject = theme.rawValue
+            mi.state = BoardTheme.current == theme ? .on : .off
+            styleMenu.addItem(mi)
+        }
+        styleItem.submenu = styleMenu
+        menu.addItem(styleItem)
+
         let sizeItem = NSMenuItem(title: "History Size", action: nil, keyEquivalent: "")
         let sizeMenu = NSMenu()
         for n in [25, 50, 100, 200] {
@@ -172,6 +184,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "StickyClip")
         image?.isTemplate = true
         statusItem.button?.image = image
+    }
+
+    @objc private func setBoardTheme(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(raw, forKey: BoardTheme.defaultsKey)
     }
 
     @objc private func setHistorySize(_ sender: NSMenuItem) {

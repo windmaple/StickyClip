@@ -96,7 +96,7 @@ struct StickyNoteView: View {
             FoldedNoteShape(fold: NoteMetrics.fold)
                 .stroke(Color.accentColor, lineWidth: isSelected ? 3 : 0)
         )
-        .overlay(alignment: .top) { tape }
+        .overlay(alignment: .top) { attachmentView }
         .contentShape(FoldedNoteShape(fold: NoteMetrics.fold))
         .rotationEffect(.degrees(isSelected ? 0 : tilt))
         .scaleEffect(isSelected ? 1.07 : (isHovering ? 1.03 : 1.0))
@@ -111,13 +111,25 @@ struct StickyNoteView: View {
 
     // MARK: - Pieces
 
-    private var tape: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.5))
-            .frame(width: 52, height: 15)
-            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
-            .rotationEffect(.degrees(-3))
-            .offset(y: -7)
+    @Environment(\.noteAttachment) private var attachment
+
+    @ViewBuilder
+    private var attachmentView: some View {
+        switch attachment {
+        case .tape:
+            Rectangle()
+                .fill(Color.white.opacity(0.5))
+                .frame(width: 52, height: 15)
+                .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+                .rotationEffect(.degrees(-3))
+                .offset(y: -7)
+        case .pin:
+            PushPinHead(color: NotePalette.pinColors[abs(item.colorIndex * 3 + 1) % NotePalette.pinColors.count])
+                .offset(y: 1)
+        case .magnet:
+            MagnetView(color: NotePalette.pinColors[abs(item.colorIndex * 2 + 3) % NotePalette.pinColors.count])
+                .offset(y: -5)
+        }
     }
 
     private var header: some View {
