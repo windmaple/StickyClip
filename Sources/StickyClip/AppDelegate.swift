@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.register(defaults: [
             "autoPaste": true,
-            "maxItems": 50
+            "maxItems": 50,
+            "shiftWindows": true
         ])
 
         setupMainMenu()
@@ -44,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         store.saveNow()
+        WindowShifter.shared.restoreNow() // never leave windows pushed down
     }
 
     // MARK: - Menu bar item
@@ -111,13 +113,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pause.state = ClipboardMonitor.shared.isPaused ? .on : .off
         menu.addItem(pause)
 
-        let styleItem = NSMenuItem(title: "Board Style", action: nil, keyEquivalent: "")
+        let styleItem = NSMenuItem(title: "Style", action: nil, keyEquivalent: "")
         let styleMenu = NSMenu()
+        let isLine = Presentation.current == .clothesline
+        let line = NSMenuItem(title: "Clothesline", action: #selector(setClothesline), keyEquivalent: "")
+        line.target = self
+        line.state = isLine ? .on : .off
+        styleMenu.addItem(line)
+        let shift = NSMenuItem(title: "    Move Windows Down to Make Room",
+                               action: #selector(toggleShiftWindows), keyEquivalent: "")
+        shift.target = self
+        shift.state = NotesPanelController.shared.shiftsWindows ? .on : .off
+        shift.isEnabled = isLine
+        styleMenu.addItem(shift)
+        styleMenu.addItem(.separator())
         for theme in BoardTheme.allCases {
             let mi = NSMenuItem(title: theme.title, action: #selector(setBoardTheme(_:)), keyEquivalent: "")
             mi.target = self
             mi.representedObject = theme.rawValue
-            mi.state = BoardTheme.current == theme ? .on : .off
+            mi.state = !isLine && BoardTheme.current == theme ? .on : .off
             styleMenu.addItem(mi)
         }
         styleItem.submenu = styleMenu
@@ -189,6 +203,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func setBoardTheme(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String else { return }
         UserDefaults.standard.set(raw, forKey: BoardTheme.defaultsKey)
+        UserDefaults.standard.set(Presentation.board.rawValue, forKey: Presentation.defaultsKey)
+    }
+
+    @objc private func setClothesline() {
+        UserDefaults.standard.set(Presentation.clothesline.rawValue, forKey: Presentation.defaultsKey)
+    }
+
+    @objc private func toggleShiftWindows() {
+        NotesPanelController.shared.shiftsWindows.toggle()
     }
 
     @objc private func setHistorySize(_ sender: NSMenuItem) {

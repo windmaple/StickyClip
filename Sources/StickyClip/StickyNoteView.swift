@@ -98,8 +98,9 @@ struct StickyNoteView: View {
         )
         .overlay(alignment: .top) { attachmentView }
         .contentShape(FoldedNoteShape(fold: NoteMetrics.fold))
-        .rotationEffect(.degrees(isSelected ? 0 : tilt))
-        .scaleEffect(isSelected ? 1.07 : (isHovering ? 1.03 : 1.0))
+        .rotationEffect(.degrees(isSelected || attachment == .clothespin ? 0 : tilt))
+        .scaleEffect(isSelected ? 1.07 : (isHovering ? 1.03 : 1.0),
+                     anchor: attachment == .clothespin ? .top : .center)
         .shadow(color: .black.opacity(isSelected ? 0.35 : 0.22),
                 radius: isSelected ? 12 : 5,
                 x: 0, y: isSelected ? 7 : 3)
@@ -129,6 +130,10 @@ struct StickyNoteView: View {
         case .magnet:
             MagnetView(color: NotePalette.pinColors[abs(item.colorIndex * 2 + 3) % NotePalette.pinColors.count])
                 .offset(y: -5)
+        case .clothespin:
+            // 34pt tall; grips the note's top 12pt, the rope runs through its upper part.
+            ClothespinView()
+                .offset(y: -22)
         }
     }
 

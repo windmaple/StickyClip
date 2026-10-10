@@ -7,15 +7,25 @@ final class NotesViewModel: ObservableObject {
     @Published var query: String = "" {
         didSet { if query != oldValue { selectedIndex = 0 } }
     }
-    @Published var selectedIndex: Int = 0
+    @Published var selectedIndex: Int = 0 {
+        didSet { revealSelection() }
+    }
     /// Changes every time the panel is shown, so the view can reset focus/scroll.
     @Published private(set) var sessionID = UUID()
+    /// Clothesline or board — set by the panel controller each time it shows.
+    @Published var presentation: Presentation = .board
+    /// How far the notes have slid along the clothesline.
+    @Published var lineOffset: CGFloat = 0
 
-    let columns = 4
+    /// Notes per row (↑/↓ jump by this much). 1 on the clothesline.
+    var columns = 4
+    /// Visible width of the clothesline's note area (set by the controller).
+    var lineAreaWidth: CGFloat = 1000
     private let store = ClipboardStore.shared
 
     var onChoose: ((ClipItem, _ paste: Bool) -> Void)?
     var onOpenAccessibility: (() -> Void)?
+    var onDismiss: (() -> Void)?
 
     var visibleItems: [ClipItem] {
         let all = store.orderedItems
@@ -31,8 +41,42 @@ final class NotesViewModel: ObservableObject {
 
     func prepareForShow() {
         query = ""
+        lineOffset = 0
         selectedIndex = 0
         sessionID = UUID()
+    }
+
+    // MARK: Clothesline scrolling
+
+    private var maxLineOffset: CGFloat {
+        let count = CGFloat(max(visibleItems.count, 1))
+        return max(0, (count - 1) * ClotheslineMetrics.spacing + NoteMetrics.width - lineAreaWidth)
+    }
+
+    func scrollLine(by delta: CGFloat) {
+        lineOffset = min(max(0, lineOffset + delta), maxLineOffset)
+    }
+
+    /// Slide the line so the selected note is fully visible.
+    private func revealSelection() {
+        guard presentation == .clothesline else { return }
+        let start = CGFloat(selectedIndex) * ClotheslineMetrics.spacing
+        if start < lineOffset {
+            lineOffset = start
+        } else if start + NoteMetrics.width > lineOffset + lineAreaWidth {
+            lineOffset = start + NoteMetrics.width - lineAreaWidth
+        }
+    }
+
+    /// Right-click menu for a note.
+    func contextMenu(for item: ClipItem, at index: Int) -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem("Paste") { [weak self] in self?.choose(at: index, paste: true) })
+        menu.addItem(ClosureMenuItem("Copy to Clipboard") { [weak self] in self?.choose(at: index, paste: false) })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(item.isPinned ? "Unpin" : "Pin") { [weak self] in self?.togglePin(item) })
+        menu.addItem(ClosureMenuItem("Delete") { [weak self] in self?.delete(item) })
+        return menu
     }
 
     func move(by delta: Int) {
@@ -275,7 +319,7 @@ struct NotesBoardView: View {
                                         if hovering { hoveredID = item.id }
                                         else if hoveredID == item.id { hoveredID = nil }
                                     },
-                                    menuProvider: { contextMenu(for: item, index: index) }
+                                    menuProvider: { model.contextMenu(for: item, at: index) }
                                 )
                             )
                             .id(item.id)
@@ -294,16 +338,6 @@ struct NotesBoardView: View {
             }
             .onChange(of: model.sessionID) { _, _ in hoveredID = nil }
         }
-    }
-
-    private func contextMenu(for item: ClipItem, index: Int) -> NSMenu {
-        let menu = NSMenu()
-        menu.addItem(ClosureMenuItem("Paste") { model.choose(at: index, paste: true) })
-        menu.addItem(ClosureMenuItem("Copy to Clipboard") { model.choose(at: index, paste: false) })
-        menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(item.isPinned ? "Unpin" : "Pin") { model.togglePin(item) })
-        menu.addItem(ClosureMenuItem("Delete") { model.delete(item) })
-        return menu
     }
 
     // MARK: - Empty / footer

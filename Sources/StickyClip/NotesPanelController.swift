@@ -50,8 +50,10 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
         panel = NotesPanel(contentRect: NSRect(origin: .zero, size: size))
         panel.delegate = self
 
-        let hosting = NSHostingView(rootView: NotesBoardView(model: model))
+        let hosting = NSHostingView(rootView: PanelRootView(model: model))
+        hosting.sizingOptions = [] // the controller decides the panel size per presentation
         hosting.frame = NSRect(origin: .zero, size: size)
+        hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
 
         model.onChoose = { [weak self] item, paste in self?.choose(item, paste: paste) }
@@ -60,6 +62,13 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
             PasteService.requestAccess()
             PasteService.openAccessibilitySettings()
         }
+        model.onDismiss = { [weak self] in self?.hide() }
+    }
+
+    /// Whether the clothesline pushes other windows down to make room.
+    var shiftsWindows: Bool {
+        get { UserDefaults.standard.bool(forKey: "shiftWindows") }
+        set { UserDefaults.standard.set(newValue, forKey: "shiftWindows") }
     }
 
     // MARK: - Show / hide
@@ -74,24 +83,43 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
             previousApp = front
         }
 
+        let mode = Presentation.current
+        let screen = activeScreen()
+        model.presentation = mode
+        model.columns = mode == .clothesline ? 1 : 4
+
+        switch mode {
+        case .clothesline:
+            layoutClothesline(on: screen)
+        case .board:
+            panel.hasShadow = true
+            panel.setContentSize(NSSize(width: BoardMetrics.width, height: BoardMetrics.height))
+            positionBoard(on: screen)
+        }
         model.prepareForShow()
-        positionOnActiveScreen()
 
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.12
+            ctx.duration = mode == .clothesline ? 0.05 : 0.12
             panel.animator().alphaValue = 1
         }
         installKeyMonitor()
+        if mode == .clothesline {
+            installScrollMonitor()
+            if shiftsWindows && PasteService.isTrusted { shiftWindows(on: screen) }
+        }
     }
 
-    func hide() {
+    /// Hides the picker, puts any shifted windows back, then runs `completion` (on the main thread).
+    func hide(completion: (() -> Void)? = nil) {
         removeKeyMonitor()
+        removeScrollMonitor()
         panel.orderOut(nil)
         panel.ignoresMouseEvents = false
         panel.alphaValue = 1
+        WindowShifter.shared.restore(completion: completion)
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -99,16 +127,39 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
         if panel.isVisible && !isDragging { hide() }
     }
 
-    private func positionOnActiveScreen() {
+    private func activeScreen() -> NSScreen {
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { return }
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+            ?? NSScreen.main ?? NSScreen.screens[0]
+    }
+
+    private func positionBoard(on screen: NSScreen) {
+        let visible = screen.visibleFrame
         let size = panel.frame.size
-        let origin = NSPoint(
+        panel.setFrameOrigin(NSPoint(
             x: visible.midX - size.width / 2,
             y: visible.midY - size.height / 2 + visible.height * 0.08
-        )
-        panel.setFrameOrigin(origin)
+        ))
+    }
+
+    /// Full-width strip hanging right under the menu bar.
+    private func layoutClothesline(on screen: NSScreen) {
+        let full = screen.frame
+        let menuBarBottom = screen.visibleFrame.maxY
+        let height = ClotheslineMetrics.height
+        panel.hasShadow = false
+        panel.setFrame(NSRect(x: full.minX, y: menuBarBottom - height, width: full.width, height: height),
+                       display: false)
+        model.lineAreaWidth = full.width - ClotheslineMetrics.notesLeft - ClotheslineMetrics.rightMargin
+    }
+
+    private func shiftWindows(on screen: NSScreen) {
+        // Convert to the top-left-origin space used by the window server / Accessibility.
+        guard let primaryTop = NSScreen.screens.first?.frame.maxY else { return }
+        let f = screen.frame
+        let screenRect = CGRect(x: f.minX, y: primaryTop - f.maxY, width: f.width, height: f.height)
+        let stripBottom = primaryTop - (screen.visibleFrame.maxY - ClotheslineMetrics.height)
+        WindowShifter.shared.shiftWindows(screenRect: screenRect, bandBottom: stripBottom + 4)
     }
 
     // MARK: - Drag a note out to another app
@@ -141,13 +192,13 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
         }
 
         // The window doesn't accept drops: focus it and paste instead.
-        hide()
         let store = ClipboardStore.shared
         store.writeToPasteboard(item)
         ClipboardMonitor.shared.ignoreCurrentChange()
         store.bump(id: item.id)
 
         guard PasteService.isTrusted else {
+            hide()
             target.app?.activate()
             if !didPromptThisSession {
                 didPromptThisSession = true
@@ -155,8 +206,9 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
             }
             return
         }
+        // Raise the window while it's still where it was dropped on, then restore windows and paste.
         DropTargetFinder.focus(target)
-        pasteWhenFrontmost(pid: target.pid)
+        hide { [weak self] in self?.pasteWhenFrontmost(pid: target.pid) }
     }
 
     private func restoreAfterDrag() {
@@ -183,31 +235,52 @@ final class NotesPanelController: NSObject, NSWindowDelegate {
     // MARK: - Choosing
 
     private func choose(_ item: ClipItem, paste: Bool) {
-        hide()
-
         let store = ClipboardStore.shared
         store.writeToPasteboard(item)
         ClipboardMonitor.shared.ignoreCurrentChange()
         store.bump(id: item.id)
 
-        guard paste, autoPaste else { return }
-        guard PasteService.isTrusted else {
+        let shouldPaste = paste && autoPaste
+        if shouldPaste && !PasteService.isTrusted && !didPromptThisSession {
             // The item is on the clipboard; the user can still ⌘V manually.
-            // Only nag once per launch — the board footer keeps showing the hint.
-            if !didPromptThisSession {
-                didPromptThisSession = true
-                PasteService.requestAccess()
-            }
-            return
+            // Only nag once per launch — the footer keeps showing the hint.
+            didPromptThisSession = true
+            PasteService.requestAccess()
         }
 
-        if let app = previousApp, !app.isActive {
-            app.activate()
+        // Paste only after shifted windows are back in place.
+        hide { [weak self] in
+            guard shouldPaste, PasteService.isTrusted else { return }
+            if let app = self?.previousApp, !app.isActive {
+                app.activate()
+            }
+            // Give focus a moment to settle back into the target app.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                PasteService.simulatePaste()
+            }
         }
-        // Give focus a moment to settle back into the target app.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            PasteService.simulatePaste()
+    }
+
+    // MARK: - Scroll wheel (slides notes along the clothesline)
+
+    private var scrollMonitor: Any?
+
+    private func installScrollMonitor() {
+        removeScrollMonitor()
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self else { return event }
+            let dx = event.scrollingDeltaX
+            let dy = event.scrollingDeltaY
+            let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 14
+            let delta = (abs(dx) > abs(dy) ? -dx : -dy) * scale
+            MainActor.assumeIsolated { self.model.scrollLine(by: delta) }
+            return nil
         }
+    }
+
+    private func removeScrollMonitor() {
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        scrollMonitor = nil
     }
 
     // MARK: - Keyboard

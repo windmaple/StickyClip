@@ -244,7 +244,7 @@ enum DropTargetFinder {
         target.app?.activate()
     }
 
-    private static func frame(of window: AXUIElement) -> CGRect? {
+    static func frame(of window: AXUIElement) -> CGRect? {
         var posRef: CFTypeRef?
         var sizeRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posRef) == .success,

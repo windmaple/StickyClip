@@ -4,7 +4,7 @@ import SwiftUI
 
 /// What holds a sticky note onto the board.
 enum NoteAttachment {
-    case tape, pin, magnet
+    case tape, pin, magnet, clothespin
 }
 
 private struct NoteAttachmentKey: EnvironmentKey {
