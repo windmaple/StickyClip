@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     action: #selector(copyRecent(_:)), keyEquivalent: "")
                 mi.target = self
                 mi.representedObject = item.id
-                mi.image = NSImage(systemSymbolName: item.kind.symbol, accessibilityDescription: nil)
+                mi.image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
                 menu.addItem(mi)
             }
         }

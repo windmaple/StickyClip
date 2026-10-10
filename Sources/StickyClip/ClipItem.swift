@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The kind of content captured from the pasteboard.
 enum ClipKind: String, Codable {
@@ -54,9 +55,25 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var headerLabel: String {
         if kind == .file {
             let count = filePaths?.count ?? 0
-            return count > 1 ? "\(count) Files" : "File"
+            let noun = isImageFiles ? "Image" : "File"
+            return count > 1 ? "\(count) \(noun)s" : noun
         }
         return kind.label
+    }
+
+    /// SF Symbol for the note header / menu.
+    var symbol: String {
+        kind == .file && isImageFiles ? ClipKind.image.symbol : kind.symbol
+    }
+
+    /// True when every copied file is an image (e.g. PNGs/JPEGs copied in Finder).
+    var isImageFiles: Bool {
+        let urls = fileURLs
+        guard !urls.isEmpty else { return false }
+        return urls.allSatisfy { url in
+            guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+            return type.conforms(to: .image)
+        }
     }
 
     /// A short, single-line description used in the menu bar "Recent" list.

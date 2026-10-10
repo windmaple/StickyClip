@@ -134,7 +134,7 @@ struct StickyNoteView: View {
 
     private var header: some View {
         HStack(spacing: 4) {
-            Image(systemName: item.kind.symbol)
+            Image(systemName: item.symbol)
                 .font(.system(size: 10, weight: .bold))
             Text(item.headerLabel.uppercased())
                 .font(.system(size: 9, weight: .heavy))
