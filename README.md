@@ -1,6 +1,10 @@
 # StickyClip
 
-A tiny macOS menu-bar clipboard manager. Press **⇧⌘V** and your clipboard history pops up as a board of colourful sticky notes — preview, pick one, and it's pasted into the app you were using.
+A tiny macOS menu-bar clipboard manager. Press **⇧⌘V** and your clipboard history drops down from the menu bar as colourful sticky notes hanging on a clothesline. Preview, pick one, and it's pasted into the app you were using.
+
+![StickyClip clothesline](assets/clothesline.png)
+
+Prefer a board? Switch under *Style* in the menu bar:
 
 ![StickyClip whiteboard](assets/whiteboard.png)
 
@@ -12,15 +16,16 @@ A tiny macOS menu-bar clipboard manager. Press **⇧⌘V** and your clipboard hi
 
 - Lives in the menu bar only (no Dock icon)
 - Records **text, links, images and Finder files**, with real thumbnails for images, PDFs and videos
-- **⇧⌘V** opens a floating board of sticky notes (it doesn't steal focus from your current app)
-- **Board styles**: whiteboard (magnets and markers), cork board (pushpins), chalkboard (chalk), or plain frosted glass. Pick one under *Board Style* in the menu bar
-- Search by typing, navigate with arrow keys, pick with ↩ or ⌘1–9
+- **⇧⌘V** opens the picker without stealing focus from your current app
+- **Clothesline** (default): a rope hooked to both ends of the menu bar; notes hang on clothespins, swing in, and slide along the line (← → or scroll). Windows in the way **slide down to make room** and slide back when you're done
+- **Board styles**: whiteboard (magnets and markers), cork board (pushpins), chalkboard (chalk), or plain frosted glass
+- Search by typing, pick with ↩ or ⌘1–9
 - **Drag a note onto any app window** to drop it in. Apps that accept drops insert it where you let go; for windows that don't, StickyClip brings the window forward and pastes with ⌘V
 - **Pin** notes so they never get pushed out of history
 - Same content copied again just moves to the top (no duplicates)
 - Skips password-manager content (respects the `org.nspasteboard.ConcealedType` / `TransientType` markers)
 - History is kept between launches in `~/Library/Application Support/StickyClip/`
-- Menu bar options: recent items, board style, auto-paste on/off, pause recording, history size, launch at login, clear history
+- Menu bar options: recent items, style (and window shifting on/off), auto-paste on/off, pause recording, history size, launch at login, clear history
 
 ## Build & run
 
@@ -78,6 +83,8 @@ Sources/StickyClip/
   FilePreviewView.swift       Quick Look thumbnails for file/image notes
   BoardTheme.swift            Board styles: surfaces, frames, tray, pins & magnets
   NoteDragSupport.swift       Drag a note out to another app (+ paste fallback)
+  ClotheslineView.swift       Clothesline: rope, clothespins, swinging notes, search tag
+  WindowShifter.swift         Slides other windows down out of the way and back again
 ```
 
 For testing, `open StickyClip.app --args --show` opens the board as soon as the app launches.
