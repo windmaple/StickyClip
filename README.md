@@ -2,6 +2,8 @@
 
 A tiny macOS menu-bar clipboard manager. Press **⇧⌘V** and your clipboard history drops down from the menu bar as colourful sticky notes hanging on a clothesline. Preview, pick one, and it's pasted into the app you were using.
 
+🌐 **Website:** [stickyclip-app.web.app](https://stickyclip-app.web.app) · ⬇️ [Download the latest release](https://github.com/windmaple/StickyClip/releases/latest)
+
 ![StickyClip clothesline](assets/clothesline.png)
 
 Prefer a board? Switch under *Style* in the menu bar:
